@@ -1,0 +1,35 @@
+body {
+    margin: 0;
+    background-color: #2a2c39;
+    font-family: 'Yanone Kaffeesatz', sans-serif;
+    font-weight: 200;
+}
+#map-holder {
+    width: 100vw;
+    height: 100vh;
+}
+svg rect {
+    fill: #cccccc;
+}
+.country {
+    fill: #f0f0f0;
+    stroke: #bbbbbb;
+    stroke-width: 0.8;
+}
+.country-on {
+    fill: rgb(155, 155, 155);
+}
+.countryLabel {
+    display: none;
+}
+.countryName {
+    fill: #1c1e28;
+    opacity: 0.5;
+}
+.memberPoint:hover, .leaderPoint:hover {
+    opacity: 1;
+}
+.pointLabel {
+    display: none;
+    fill: #2a2c39;
+}

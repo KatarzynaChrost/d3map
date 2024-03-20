@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>D3.js</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.5.0/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-force/0.0.3/d3-force.min.js"></script>
+    <script src="./d3-marker-cluster.js"></script>
+    <script src="/assets/data.js"></script>
+    <script type="module">
+      let w = 2000;
+      let h = 1000;
+      let minZoom;
+      let maxZoom;
+      let countriesGroup;
+      let pointsGroup;
+      let countryLabels;
+      let pointsLabels;
+
+      let projection = d3
+        .geoMercator()
+        .center([0, 22])
+        .scale([w / (2 * Math.PI)])
+        .translate([w / 2, h / 2]);
+
+      const markersData = placesData.institutions.map(function (d) {
+        let point = projection([d.locationLng, d.locationLat]);
+        return {
+          ...d,
+          x: point[0],
+          y: point[1],
+          r: 10,
+          a: Math.PI * 100,
+        };
+      });
+
+      let path = d3.geoPath().projection(projection);
+
+      function zoomed() {
+        let t = d3.event.transform;
+
+        countriesGroup.attr(
+          "transform",
+          "translate(" + t.x + "," + t.y + ")scale(" + t.k + ")"
+        );
+        pointsGroup.attr(
+          "transform",
+          "translate(" + t.x + "," + t.y + ")scale(" + t.k + ")"
+        );
+        pointsGroup.selectAll("circle").attr("r", 10 / t.k);
+        pointsGroup
+          .selectAll("svg")
+          .attr("width", 26 / t.k)
+          .attr("height", 26 / t.k)
+          .attr("x", -13 / t.k)
+          .attr("y", -13 / t.k);
+
+        pointsGroup
+          .selectAll(".pointLabel")
+          .attr("font-size", function () {
+            return (0.7 * maxZoom) / t.k + "px";
+          })
+          .attr("dx", function (d) {
+            if (t.k <= 7) {
+              return -t.k + 1;
+            }
+            if (t.k <= 30) {
+              return -Math.sqrt(t.k) - 4;
+            }
+            if (t.k <= 40) {
+              return -Math.sqrt(t.k) - 3;
+            }
+            return -Math.sqrt(t.k) - 2;
+          });
+        countryLabels.selectAll("text").attr("font-size", function () {
+          return (0.5 * maxZoom) / t.k + "px";
+        });
+        const newMarkersData = markersData.map((point) => ({
+          ...point,
+          r: 10 / t.k,
+        }));
+
+        d3.cluster()
+          .alphaMin(1)
+          .nodes(newMarkersData)
+          .on("tick", () => {
+            newMarkersData.forEach((d) => {
+              pointsGroup
+                .select("#" + d.id)
+                .attr("r", d.collided ? d.r / t.k : d.r);
+
+              if (d.isLeader) {
+                if (d.collided) {
+                  pointsGroup.select("#" + d.id).attr("display", "none");
+
+                  pointsGroup
+                    .select("#collidedLeaderCircle")
+                    .attr("r", d.r / t.k)
+                    .attr("display", "block");
+                }
+                if (!d.collided) {
+                  pointsGroup.select("#" + d.id).attr("display", "block");
+
+                  pointsGroup
+                    .select("#collidedLeaderCircle")
+                    .attr("display", "none");
+                }
+              }
+
+              pointsGroup
+                .select("#" + d.id)
+                .on("mouseover", function () {
+                  d3.select("#" + d.id + "_label").style(
+                    "display",
+                    d.collided && d.count > 1 ? "none" : "block"
+                  );
+                })
+                .attr("fill", function () {
+                  if (d.collided && d.count > 1) {
+                    return "darkslategrey";
+                  }
+
+                  if (d.placeType === "business") {
+                    return "red";
+                  } else {
+                    return "#00648c";
+                  }
+                });
+
+              pointsGroup
+                .select("#" + d.id + "_count")
+                .attr("font-size", (d.count * 15) / t.k)
+                .text(function () {
+                  return d.count > 1 ? d.count : "";
+                })
+                .attr("dx", d.x)
+                .attr("dy", d.y);
+            });
+          });
+      }
+
+      let zoom = d3.zoom().on("zoom", zoomed);
+
+      function getTextBox(selection) {
+        selection.each(function (d) {
+          d.bbox = this.getBBox();
+        });
+      }
+
+      function initiateZoom() {
+        minZoom = Math.max(
+          $("#map-holder").width() / w,
+          $("#map-holder").height() / h
+        );
+        maxZoom = 40 * minZoom;
+
+        zoom.scaleExtent([minZoom, maxZoom]).translateExtent([
+          [0, 0],
+          [w, h],
+        ]);
+
+        let midX = ($("#map-holder").width() - minZoom * w) / 2;
+        let midY = ($("#map-holder").height() - minZoom * h) / 2;
+
+        svg.call(
+          zoom.transform,
+          d3.zoomIdentity.translate(midX, midY).scale(minZoom)
+        );
+
+        let minX = +Infinity,
+          minY = +Infinity,
+          maxX = -Infinity,
+          maxY = -Infinity;
+
+        placesData.institutions.forEach((point) => {
+          const position = projection([point.locationLng, point.locationLat]);
+          if (minX > position[0]) {
+            minX = position[0];
+          }
+          if (minY > position[1]) {
+            minY = position[1];
+          }
+          if (maxX < position[0]) {
+            maxX = position[0];
+          }
+          if (maxY < position[1]) {
+            maxY = position[1];
+          }
+        });
+
+        const bounds = [
+          [minX, minY],
+          [maxX, maxY],
+        ];
+        boxZoom(bounds, [(minX + maxX) / 2, (minY + maxY) / 2], 50);
+      }
+
+      function boxZoom(box, centroid, paddingPerc) {
+        let minXY = box[0];
+        let maxXY = box[1];
+        let zoomWidth = Math.abs(minXY[0] - maxXY[0]);
+        let zoomHeight = Math.abs(minXY[1] - maxXY[1]);
+        let zoomMidX = centroid[0];
+        let zoomMidY = centroid[1];
+        zoomWidth = zoomWidth * (1 + paddingPerc / 100);
+        zoomHeight = zoomHeight * (1 + paddingPerc / 100);
+        let maxXscale = $("svg").width() / zoomWidth;
+        let maxYscale = $("svg").height() / zoomHeight;
+        let zoomScale = Math.min(maxXscale, maxYscale);
+        zoomScale = Math.min(zoomScale, maxZoom);
+        zoomScale = Math.max(zoomScale, minZoom);
+        let offsetX = zoomScale * zoomMidX;
+        let offsetY = zoomScale * zoomMidY;
+        let dleft = Math.min(0, $("svg").width() / 2 - offsetX);
+        let dtop = Math.min(0, $("svg").height() / 2 - offsetY);
+        dleft = Math.max($("svg").width() - w * zoomScale, dleft);
+        dtop = Math.max($("svg").height() - h * zoomScale, dtop);
+        svg
+          .transition()
+          .duration(500)
+          .call(
+            zoom.transform,
+            d3.zoomIdentity.translate(dleft, dtop).scale(zoomScale)
+          );
+      }
+
+      $(window).resize(function () {
+        svg
+          .attr("width", $("#map-holder").width())
+          .attr("height", $("#map-holder").height());
+
+        initiateZoom();
+      });
+
+      var svg = d3
+        .select("#map-holder")
+        .append("svg")
+        .attr("width", $("#map-holder").width())
+        .attr("height", $("#map-holder").height())
+        .call(zoom);
+
+      d3.json(
+        "https://raw.githubusercontent.com/andybarefoot/andybarefoot-www/master/maps/mapdata/custom50.json",
+        function (json) {
+          countriesGroup = svg.append("g").attr("id", "map");
+          countriesGroup
+            .append("rect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", w)
+            .attr("height", h);
+
+          let countries = countriesGroup
+            .selectAll("path")
+            .data(json.features)
+            .enter()
+            .append("path")
+            .attr("d", path)
+            .attr("id", function (d, i) {
+              return "country" + d.properties.iso_a3;
+            })
+            .attr("class", "country")
+
+            .on("mouseover", function (d, i) {
+              d3.select("#countryLabel" + d.properties.iso_a3).style(
+                "display",
+                "block"
+              );
+            })
+            .on("mouseout", function (d, i) {
+              d3.select("#countryLabel" + d.properties.iso_a3).style(
+                "display",
+                "none"
+              );
+            });
+
+          countryLabels = countriesGroup
+            .selectAll("g")
+            .data(json.features)
+            .enter()
+            .append("g")
+            .attr("class", "countryLabel")
+            .attr("id", function (d) {
+              return "countryLabel" + d.properties.iso_a3;
+            })
+            .attr("transform", function (d) {
+              return (
+                "translate(" +
+                path.centroid(d)[0] +
+                "," +
+                path.centroid(d)[1] +
+                ")"
+              );
+            })
+            .on("mouseover", function (d, i) {
+              d3.select(this).style("display", "block");
+            })
+            .on("mouseout", function (d, i) {
+              d3.select(this).style("display", "none");
+            });
+
+          countryLabels
+            .append("text")
+            .attr("class", "countryName")
+            .style("text-anchor", "middle")
+            .attr("dx", 0)
+            .attr("dy", 0)
+            .text(function (d) {
+              return d.properties.name;
+            })
+            .call(getTextBox);
+
+          pointsGroup = svg.append("g").attr("id", "points").attr("d", path);
+
+          markersData.forEach(function (d) {
+            pointsLabels = pointsGroup
+              .append("text")
+              .attr("x", d.x + 10)
+              .attr("y", d.y)
+              .text(d.nameEN)
+              .attr("class", "pointLabel")
+              .attr("id", function () {
+                return d.id + "_label";
+              })
+              .on("mouseover", function () {
+                d3.select(this).style("display", "block");
+              })
+              .on("mouseout", function () {
+                d3.select(this).style("display", "none");
+              });
+
+            if (!d.isLeader) {
+              pointsGroup
+                .append("circle")
+                .attr("id", d.id)
+                .attr("cx", d.x)
+                .attr("cy", d.y)
+                .attr("r", d.r)
+                .attr("class", "memberPoint")
+                .attr("opacity", 0.75)
+                .on("mouseover", function () {
+                  d3.select("#" + d.id + "_label").style("display", "block");
+                })
+                .on("mouseout", function () {
+                  d3.select("#" + d.id + "_label").style("display", "none");
+                })
+                .attr("fill", function () {
+                  if (d.placeType === "business") {
+                    return "red";
+                  } else {
+                    return "#00648c";
+                  }
+                });
+            }
+            if (d.isLeader) {
+              d3.xml("assets/star.svg", function (data) {
+                var importedNode = document.importNode(
+                  data.documentElement,
+                  true
+                );
+
+                const leaderPoint = pointsGroup
+                  .append("g")
+                  .attr("transform", "translate(" + d.x + "," + d.y + ")")
+                  .append(() => importedNode.cloneNode(true))
+                  .attr("width", 1)
+                  .attr("height", 1)
+                  .attr("opacity", 0.75)
+                  .attr("id", d.id)
+                  .attr("class", "leaderPoint")
+                  .on("mouseover", function () {
+                    d3.select("#" + d.id + "_label").style("display", "block");
+                  })
+                  .on("mouseout", function () {
+                    d3.select("#" + d.id + "_label").style("display", "none");
+                  })
+                  .attr("fill", function () {
+                    if (d.placeType === "business") {
+                      return "red";
+                    } else {
+                      return "#00648c";
+                    }
+                  });
+              });
+
+              pointsGroup
+                .append("circle")
+                .attr("id", "collidedLeaderCircle")
+                .attr("r", d.r)
+                .attr("cx", d.x)
+                .attr("cy", d.y)
+                .attr("class", "memberPoint")
+                .attr("opacity", 0.75)
+                .attr("fill", "darkslategrey")
+                .attr("display", "none");
+            }
+          });
+
+          initiateZoom();
+        }
+      );
+    </script>
+    <script src="app.js" defer></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="map-holder"></div>
+  </body>
+</html>
